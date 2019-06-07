@@ -1,0 +1,75 @@
+# Copyright 2014-2016 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License"). You may
+# not use this file except in compliance with the License. A copy of the
+# License is located at
+#
+#	http://aws.amazon.com/apache2.0/
+#
+# or in the "license" file accompanying this file. This file is distributed
+# on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
+# express or implied. See the License for the specific language governing
+# permissions and limitations under the License.
+ 
+AWSTemplateFormatVersion: 2010-09-09 
+Description: 
+  Deployment Script for Cloud Custodian in a monitored member account. This template is supposed to be deployed after the MEMBER.YML, to add support for extra regions. It create forward rule on cloudwatch events to the main account.
+
+Parameters: 
+  CustodianMasterAccountId: 
+    Description: The account ID of the Master Account (security)  
+    Default: --get-from-member-stack-outputs--
+    Type: String 
+  CustodianEventForwardRoleName: 
+    Description: The Name of the CustodianEventForwardRole created with the member stack
+    Default: --get-from-member-stack-outputs--
+    Type: String 
+  CustodianEventForwardRoleArn: 
+    Description: The ARN of the CustodianEventForwardRole created with the member stack
+    Default: --get-from-member-stack-outputs--
+    Type: String 
+  CloudWatchEventRuleName: 
+    Description: A name for the CloudWatch Event Rule  
+    Default: EventForwardingToCentralAccount 
+    Type: String 
+ 
+Resources:  
+  CustodianEventForwardPolicy: 
+    Type: 'AWS::IAM::Policy' 
+    Properties: 
+      Roles:  
+        - !Ref CustodianEventForwardRoleName
+      PolicyName: !Join 
+        - '-' 
+        - - 'InvokeEventBus'
+          - !Ref AWS::Region  
+      PolicyDocument: 
+        Statement: 
+          - Action: events:PutEvents 
+            Effect: Allow 
+            Resource: !Join 
+              - ':' 
+              - - arn:aws:events 
+                - !Ref AWS::Region 
+                - !Ref CustodianMasterAccountId 
+                - event-bus/default 
+ 
+  CustodianEventForwardingRule: 
+    Type: AWS::Events::Rule 
+    Properties: 
+      Description: Sends All Events to a Central Account 
+      EventPattern: 
+        account: 
+          - !Ref 'AWS::AccountId' 
+      Name: !Ref CloudWatchEventRuleName 
+      Targets: 
+        - Arn: !Join 
+            - ':' 
+            - - 'arn:aws:events' 
+              - !Ref 'AWS::Region' 
+              - !Ref CustodianMasterAccountId  
+              - event-bus/default 
+          Id: Event_Forwarding_Bus  
+          RoleArn: !Ref CustodianEventForwardRoleArn
+
+   

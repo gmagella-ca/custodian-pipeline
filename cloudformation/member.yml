@@ -1,0 +1,106 @@
+#© 2018 Amazon Web Services, Inc. or its affiliates. All Rights Reserved. This AWS Content is provided subject to the terms of the AWS Customer Agreement available at http://aws.amazon.com/agreement or other written agreement between Customer and Amazon Web Services, Inc. 
+ 
+AWSTemplateFormatVersion: 2010-09-09 
+Description: 
+  Deployment Script for Cloud Custodian in a monitored member account. Creates a CloudCustodianAdminRole and CloudWatch Event Rule to send events to the Master monitoring Account 
+   
+Parameters: 
+  CustodianMasterAccountId: 
+    Description: Enter the 12 digit account ID of the Security Account 
+    Type: String 
+  CloudWatchEventRuleName: 
+    Description: A name for the CloudWatch Event Rule  
+    Default: EventForwardingToCentralAccount 
+    Type: String 
+ 
+Resources: 
+  CustodianRole: 
+    Type: AWS::IAM::Role 
+    Properties: 
+      AssumeRolePolicyDocument: 
+        Version: 2012-10-17 
+        Statement: 
+        - Action: sts:AssumeRole 
+          Effect: Allow 
+          Principal: 
+            Service: lambda.amazonaws.com 
+        - Effect: "Allow" 
+          Principal: 
+            AWS: !Join 
+              - '' 
+              - - 'arn:' 
+                - !Ref 'AWS::Partition' 
+                - ':iam::' 
+                - !Ref CustodianMasterAccountId 
+                - ':root' 
+          Action: 
+          - "sts:AssumeRole" 
+      ManagedPolicyArns: 
+      - arn:aws:iam::aws:policy/AdministratorAccess 
+      RoleName: CloudCustodianAdminRole 
+ 
+  CustodianEventForwardRole: 
+    Type: AWS::IAM::Role 
+    Properties: 
+      Path: /service-role/ 
+      RoleName: AWSEventsInvokeEventBus 
+      AssumeRolePolicyDocument: 
+        Version: 2012-10-17 
+        Statement: 
+        - Action: "sts:AssumeRole" 
+          Effect: Allow 
+          Principal: 
+            Service: events.amazonaws.com 
+   
+  CustodianEventForwardPolicy: 
+    Type: 'AWS::IAM::Policy' 
+    Properties: 
+      Roles:  
+        - !Ref CustodianEventForwardRole 
+      PolicyName: InvokeEventBus 
+      PolicyDocument: 
+        Statement: 
+          - Action: events:PutEvents 
+            Effect: Allow 
+            Resource: !Join 
+              - ':' 
+              - - arn:aws:events 
+                - !Ref AWS::Region 
+                - !Ref CustodianMasterAccountId 
+                - event-bus/default 
+ 
+  CustodianEventForwardingRule: 
+    Type: AWS::Events::Rule 
+    Properties: 
+      Description: Sends All Events to a Central Account 
+      EventPattern: 
+        account: 
+          - !Ref 'AWS::AccountId' 
+      Name: !Ref CloudWatchEventRuleName 
+      Targets: 
+        - Arn: !Join 
+            - ':' 
+            - - 'arn:aws:events' 
+              - !Ref 'AWS::Region' 
+              - !Ref CustodianMasterAccountId 
+              - event-bus/default 
+          Id: Event_Forwarding_Bus  
+          RoleArn: !GetAtt CustodianEventForwardRole.Arn 
+Outputs: 
+  CloudCustodianAdminRole: 
+    Description: ARN of the CloudCustodianAdminRole for use in policies 
+    Value:  
+      !GetAtt CustodianRole.Arn 
+  CustodianEventForwardRoleName: 
+    Description: Name of the CustodianEventForwardRole for use in rules for for other stacks (for other regions, if needed) 
+    Value:  
+      !Ref CustodianEventForwardRole
+  CustodianEventForwardRoleArn: 
+    Description: ARN of the CustodianEventForwardRole for use in rules for other stacks (for other regions, if needed) 
+    Value:  
+      !GetAtt CustodianEventForwardRole.Arn 
+  CustodianMasterAccountId: 
+    Description: Id of the master account use in rules for other stacks (for other regions, if needed) 
+    Value: 
+      !Ref CustodianMasterAccountId 
+   

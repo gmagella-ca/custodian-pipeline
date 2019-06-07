@@ -1,0 +1,34 @@
+[ 
+    { 
+      "ParameterKey": "CloudCustodianVersion", 
+      "ParameterValue": "0.8.41.0" 
+    }, 
+    { 
+      "ParameterKey": "MailerVersion", 
+      "ParameterValue": "0.4.2" 
+    }, 
+    { 
+      "ParameterKey": "OrganizationID", 
+      "ParameterValue": "o-h6ojc2rw9c" 
+    } 
+    { 
+      "ParameterKey": "SQSQueueName", 
+      "ParameterValue": "CustodianSQSMailer" 
+    }, 
+    { 
+      "ParameterKey":"SNSTopicApprovalsDisplayName", 
+      "ParameterValue":"CustodianSNSApprovals" 
+    }, 
+    { 
+      "ParameterKey":"SNSTopicApprovalsTopicName", 
+      "ParameterValue":"CustodianSNSApprovals" 
+    }, 
+    { 
+      "ParameterKey":"SNSTopicAlertDisplayName", 
+      "ParameterValue": "CustodianAlerts" 
+    }, 
+    { 
+      "ParameterKey":"SNSTopicAlertTopicName", 
+      "ParameterValue":"CustodianAlerts" 
+    } 
+  ] 
