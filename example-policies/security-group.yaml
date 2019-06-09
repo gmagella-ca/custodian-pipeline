@@ -1,0 +1,76 @@
+vars:
+
+  notification_actionEmail: &notify_actionEmail
+  - type: notify
+    template: better_default
+    to:
+      - resource-owner
+      - email@example.com
+    transport:
+      type: sqs
+      queue: https://sqs.us-east-1.amazonaws.com/<replace-with-you-account-id>/CustodianSQSMailer
+  notification_actionSlack: &notify_actionSlack
+  - type: notify
+    slack_template: better_slack
+    to:
+      - https://hooks.slack.com/services/AAA/BBB/CCC
+    transport:
+      type: sqs
+      queue: https://sqs.us-east-1.amazonaws.com/<replace-with-you-account-id>/CustodianSQSMailer
+
+policies: 
+  - name: high-risk-security-groups-remediate 
+    resource: security-group 
+    description: | 
+      Remove any rule from a security group that allows 0.0.0.0/0 or ::/0 (IPv6) ingress 
+      and notify the user  who added the violating rule. 
+    mode: 
+      type: cloudtrail 
+      events: 
+        - source: ec2.amazonaws.com 
+          event: AuthorizeSecurityGroupIngress 
+          ids: "requestParameters.groupId" 
+        - source: ec2.amazonaws.com 
+          event: AuthorizeSecurityGroupEgress 
+          ids: "requestParameters.groupId" 
+        - source: ec2.amazonaws.com 
+          event: RevokeSecurityGroupEgress 
+          ids: "requestParameters.groupId" 
+        - source: ec2.amazonaws.com 
+          event: RevokeSecurityGroupIngress 
+          ids: "requestParameters.groupId" 
+      role: arn:aws:iam::{account_id}:role/CloudCustodianAdminRole 
+      member-role: arn:aws:iam::{account_id}:role/CloudCustodianAdminRole 
+      packages: [boto3, botocore, urllib3]  
+    filters: 
+      - not:
+        - type: value
+          key: GroupId
+          op: in
+          #These are the "whitelisted SG's allowed to have ingress on 22 or 2289 for public (if needed)
+          value: [sg-0a00a0xxx, sg-0a00a0xxx2]
+      - and:
+        - type: ingress 
+          Ports: [22,3389]
+        - or:
+          - type: ingress 
+            Cidr: 
+              value: "0.0.0.0/0" 
+          - type: ingress 
+            CidrV6: 
+              value: "::/0"
+    actions: 
+      - type: remove-permissions 
+        ingress: matched 
+      - type: post-finding 
+        severity_normalized: 30 
+        types: 
+          - "Software and Configuration Checks/AWS Security Best Practices" 
+      - << : *notify_actionEmail
+        subject: "[Custodian] Invalid Security Groupd configuration account: {{ account_id }} region: {{ region }} "
+        https://{{ region }}.console.aws.amazon.com/config/home?region={{ region }}#/resources/details/AWS::S3::Bucket/{{ resource }}
+        priority_header: '2' 
+      - << : *notify_actionSlack
+        violation_desc: "These Security Group(s) Had rules open to the world." 
+        action_desc: >
+          Action Taken: The violating security group rule has been *removed* as it typically allows direct incoming public internet traffic access to your resource which violates our Company's cloud security policy.  Please refer to our company's cloud security Best Practices documentation. If this ingress rule is required you may contact the Security Team to request an exception.

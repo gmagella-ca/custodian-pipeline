@@ -1,0 +1,53 @@
+vars:
+
+  notification_actionEmail: &notify_actionEmail
+  - type: notify
+    template: geraldo_default
+    to:
+      - resource-owner
+      - email@example.com
+    transport:
+      type: sqs
+      queue: https://sqs.us-east-1.amazonaws.com/<replace-with-you-account-id>/CustodianSQSMailer
+
+  notification_actionSlack: &notify_actionSlack
+  - type: notify
+    slack_template: geraldo_slack
+    to:
+      - https://hooks.slack.com/services/AAA/BBB/CCC
+    transport:
+      type: sqs
+      queue: https://sqs.us-east-1.amazonaws.com/<replace-with-you-account-id>/CustodianSQSMailer
+      
+policies:
+- name: ec2-auto-tag-user
+  resource: ec2
+  mode:
+    type: cloudtrail
+    role: arn:aws:iam::{account_id}:role/CloudCustodianAdminRole
+    member-role: arn:aws:iam::{account_id}:role/CloudCustodianAdminRole
+    events:
+      - RunInstances
+  filters:
+    - tag:CreatorName: absent
+  actions:
+    - type: auto-tag-user
+      tag: CreatorName
+    - << : *notify_actionEmail
+      subject: "Instance launched with no CreatorName tag! {{ account_id }} - {{ region }} "
+    - << : *notify_actionSlack
+      violation_desc: "All instances should have CreatorName tag so we can keep track."
+      action_desc: "Notification Only. Instance were tagged with the appropriate CreatorName."
+
+#- name: s3-auto-tag-user
+#  resource: s3
+#  mode:
+#    type: cloudtrail
+#    role: arn:aws:iam::{account_id}:role/CloudCustodianAdminRole
+#    events:
+#      - CreateBucket
+#  filters:
+#    - tag:ResourceCreator: absent
+#  actions:
+#    - type: auto-tag-owner
+#      tag: ResourceCreator

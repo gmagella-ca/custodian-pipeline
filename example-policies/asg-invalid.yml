@@ -1,0 +1,32 @@
+vars:
+
+  notification_actionEmail: &notify_actionEmail
+  - type: notify
+    template: better_default
+    to:
+      - resource-owner
+      - email@example.com
+    transport:
+      type: sqs
+      queue: 	https://sqs.us-east-1.amazonaws.com/<replace-with-you-account-id>/CustodianSQSMailer
+
+  notification_actionSlack: &notify_actionSlack
+  - type: notify
+    slack_template: better_slack
+    to:
+      - https://hooks.slack.com/services/AAA/BBB/CCC
+    transport:
+      type: sqs
+      queue: 	https://sqs.us-east-1.amazonaws.com/<replace-with-you-account-id>/CustodianSQSMailer
+
+policies:
+  - name: asg-invalid-configuration
+    resource: asg
+    filters:
+      - type: invalid
+    actions:
+      - << : *notify_actionEmail
+        subject: "ASG-Invalid Config-[custodian {{ account }} - {{ region }}]"
+      - << : *notify_actionSlack
+        violation_desc: "New ASG instances may fail to launch or scale! The following Autoscaling Groups have invalid AMIs, SGs, KeyPairs, Launch Configs, or Health Checks"
+        action_desc: "Notification Only. Please investigate and fix your ASGs configuration to prevent capacity issues."

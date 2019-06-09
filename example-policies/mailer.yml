@@ -1,0 +1,5 @@
+queue_url: https://sqs.us-east-1.amazonaws.com/<replace-with-you-account-id>/CustodianSQSMailer
+role: arn:aws:iam::<replace-with-you-account-id>:role/CloudCustodianMailerRole
+from_address: email@example.com
+region: us-east-1
+ses_region: us-east-1
