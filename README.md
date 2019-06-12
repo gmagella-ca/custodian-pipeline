@@ -83,29 +83,65 @@ When an action is performed in the Member account. e.g. a resource is created, t
 There are a few things worth noting:
 
 1. This is a single-region deployment that can be extended to work multi-region with easy (instructions below).
-2. This automation approach its only suitable for cloudtrail based policies (considerations below)
+2. This automation approach its only suitable for cloudtrail based policies initially (please see considerations below if you would like to use other types of policies, e.g: periodic / config / etc)
 
-## Instructions on how to make this multi-region:
+## Instructions on how to make this pipeline multi-region:
 
-If your AWS Footprint is spanned in multiple regions, these are the changes you'll have to perform to expand this set-up to support it:
+If your AWS Footprint is spanned across multiple regions, these are the changes you'll have to perform to expand this set-up to support it:
 
-### Change the buildspec for CloudCustodianPolicyDeploymentProject from:
+Change the buildspec for CloudCustodianPolicyDeploymentProject from:
 ```
 custodian run --assume arn:aws:iam::${AWS::AccountId}:role/CloudCustodianAdminRole --output-dir output/logs policies/* 
 ```
-to:
+to (add as many regions as you'd like with multiple --region):
 ```
 custodian run --assume arn:aws:iam::${AWS::AccountId}:role/CloudCustodianAdminRole --output-dir output/logs policies/* --region <region1> --region <region2>
 ```
 
-This will make the deployment phase deploy the lambdas in all the regions you need. 
+This will make the deployment phase create the lambda functions in all the regions you need, but we need to forward events to the master account on that region so the cloudwatch event can get triggered. A cloudformation template is provided.
 
 ### create the rule on the child accounts on the regions you want to support:
 
-Use the template rule.yaml to deploy the rules in any aditional region (grab details from the member outputs)
+Use the template rule.yaml to deploy the rules in any aditional region. Use the details exported on the by the MEMBER stack (step 11 on the instructions below)
 
-The deployment will be covered below. 
- 
+## Instructions to use other kinds of policies (a.k.a: Using c7n-org):
+
+For increased security, we want all the lambdas be built the Master account and reacting to cloudtrail events flowing through the event bus. 
+
+This architecture decision can limit our ability to perform certain tasks / policy checks (e.g: periodic checks). Or order for this kind of policies to work we need to deploy them on all accounts. 
+Enters [c7n-org](https://www.cloudcustodian.io/docs/tools/c7n-org.html)!
+
+The pipeline have an action called c7n-org_Deploy, this action will run "c7n-org run" command to deploy the policy *c7n-org-policies/organization-policies.yml* using the file *c7n-org-policies/accounts.yml*. 
+
+Note: To create the accounts.yml file, you might want to use the config file generation steps [described in the documentation](https://www.cloudcustodian.io/docs/tools/c7n-org.html#config-file-generation). 
+
+Here is an example of one account on this file.
+
+```
+- account_id: '123456789123'
+  email: email@example.com
+  name: Account-Name
+  role: arn:aws:iam::123456789123:role/CloudCustodianAdminRole
+  tags:
+  - path:/
+```
+
+IMPORTANT: In order for the action c7n-org_Deploy to be able to assume the CloudCustodianAdminRole on the member accounts, you'll have to change the policy CloudCustodianPolicyDeploymentProjectRolePolicy and add the permission to assume role on all member accounts, similar to this:
+
+```
+{
+    "Action": "sts:AssumeRole",
+    "Resource": [
+        "arn:aws:iam::<master-accound-id>:role/CloudCustodianAdminRole",
+        "arn:aws:iam::<member-account1>:role/CloudCustodianAdminRole",
+        "arn:aws:iam::<member-account1>:role/CloudCustodianAdminRole"
+    ],
+    "Effect": "Allow"
+},
+```
+
+Note: If this file is not present, the dry-run command will skip, but the action "c7n-org" will still provision and run skipping steps, if you do not intend to use this, you might want to remove the action so you won't be paying for resources you're using with no purpose. 
+
 ### Member (The account to be monitored) Account 
  
 Custodian Requires the accounts it is monitoring to send Cloudwatch Events to the Master (Security) Account.  It also must provide a Role with a policy with Administrator permissions for the Security Account to STS into and carry out actions. This process is described below. 
