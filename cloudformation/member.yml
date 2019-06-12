@@ -24,6 +24,7 @@ Resources:
           Effect: Allow 
           Principal: 
             Service: lambda.amazonaws.com 
+        #Do I really need this one?
         - Effect: "Allow" 
           Principal: 
             AWS: !Join 
@@ -33,6 +34,17 @@ Resources:
                 - ':iam::' 
                 - !Ref CustodianMasterAccountId 
                 - ':root' 
+          Action: 
+          - "sts:AssumeRole"
+        - Effect: "Allow" 
+          Principal: 
+            AWS: !Join 
+              - '' 
+              - - 'arn:' 
+                - !Ref 'AWS::Partition' 
+                - ':iam::' 
+                - !Ref CustodianMasterAccountId 
+                - ':role/CloudCustodianPolicyDeploymentProjectRole'
           Action: 
           - "sts:AssumeRole" 
       ManagedPolicyArns: 

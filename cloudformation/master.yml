@@ -17,6 +17,10 @@ Parameters:
   CloudCustodianVersion: 
     Type: String 
     Default: '0.8.41.0' 
+  CloudCustodianORGVersion:
+    Description: Provide the version of c7nOrg to use with your pipeline.
+    Type: String 
+    Default: '0.5.1' 
   MailerVersion: 
     Type: String 
     Default: '0.4.2'  
@@ -72,6 +76,8 @@ Resources:
       DisplayName: !Ref SNSTopicAlertDisplayName 
       TopicName: !Ref SNSTopicAlertTopicName  
   CloudCustodianAdminRole: 
+    DependsOn: 
+      - CloudCustodianDeploymentPipelineRole 
     Type: 'AWS::IAM::Role' 
     Properties: 
       AssumeRolePolicyDocument: 
@@ -92,6 +98,13 @@ Resources:
                 - ':root' 
           Action: 
           - "sts:AssumeRole" 
+        - Effect: "Allow" 
+          Principal: 
+            AWS: !Join 
+              - '' 
+              - - !GetAtt CloudCustodianDeploymentPipelineRole.Arn
+          Action:
+          - "sts:AssumeRole"
       ManagedPolicyArns: 
       - arn:aws:iam::aws:policy/AdministratorAccess 
       RoleName: CloudCustodianAdminRole 
@@ -196,6 +209,7 @@ Resources:
               - !Sub '${CloudCustodianPolicyCleanupProject.Arn}' 
               - !Sub '${CloudCustodianPolicyDeploymentDryRunProject.Arn}' 
               - !Sub '${CloudCustodianPolicyDeploymentProject.Arn}' 
+              - !Sub '${CloudCustodianPolicyDeploymentOrgProject.Arn}' 
           - Action: 
             - 'lambda:GetFunction' 
             Effect: Allow 
@@ -240,17 +254,17 @@ Resources:
                 - Name: source 
               OutputArtifacts: [] 
               RunOrder: 1 
-            - Name: PolicyValidationApprovalAction 
-              ActionTypeId: 
-                Category: Approval 
-                Owner: AWS 
-                Provider: Manual 
-                Version: '1' 
-              InputArtifacts: [] 
-              OutputArtifacts: [] 
-              Configuration: 
-                NotificationArn: !Ref SNSApprovalsTopic 
-              RunOrder: 2 
+            # - Name: PolicyValidationApprovalAction 
+            #   ActionTypeId: 
+            #     Category: Approval 
+            #     Owner: AWS 
+            #     Provider: Manual 
+            #     Version: '1' 
+            #   InputArtifacts: [] 
+            #   OutputArtifacts: [] 
+            #   Configuration: 
+            #     NotificationArn: !Ref SNSApprovalsTopic 
+            #   RunOrder: 2 
         - Name: PolicyCleanupStage 
           Actions: 
             - Name: PolicyCleanupDryRunAction 
@@ -265,17 +279,17 @@ Resources:
                 - Name: source 
               OutputArtifacts: [] 
               RunOrder: 1 
-            - Name: PolicyCleanupDryRunApprovalAction 
-              ActionTypeId: 
-                Category: Approval 
-                Owner: AWS 
-                Provider: Manual 
-                Version: '1' 
-              InputArtifacts: [] 
-              OutputArtifacts: [] 
-              Configuration: 
-                NotificationArn: !Ref SNSApprovalsTopic 
-              RunOrder: 2 
+            # - Name: PolicyCleanupDryRunApprovalAction 
+            #   ActionTypeId: 
+            #     Category: Approval 
+            #     Owner: AWS 
+            #     Provider: Manual 
+            #     Version: '1' 
+            #   InputArtifacts: [] 
+            #   OutputArtifacts: [] 
+            #   Configuration: 
+            #     NotificationArn: !Ref SNSApprovalsTopic 
+            #   RunOrder: 2 
             - Name: PolicyCleanupAction 
               ActionTypeId: 
                 Category: Test 
@@ -302,17 +316,17 @@ Resources:
                 - Name: source 
               OutputArtifacts: [] 
               RunOrder: 1 
-            - Name: ApproveDryRun 
-              ActionTypeId: 
-                Category: Approval 
-                Owner: AWS 
-                Provider: Manual 
-                Version: '1' 
-              InputArtifacts: [] 
-              OutputArtifacts: [] 
-              Configuration: 
-                NotificationArn: !Ref SNSApprovalsTopic 
-              RunOrder: 2 
+            # - Name: ApproveDryRun 
+            #   ActionTypeId: 
+            #     Category: Approval 
+            #     Owner: AWS 
+            #     Provider: Manual 
+            #     Version: '1' 
+            #   InputArtifacts: [] 
+            #   OutputArtifacts: [] 
+            #   Configuration: 
+            #     NotificationArn: !Ref SNSApprovalsTopic 
+            #   RunOrder: 2 
             - Name: c7nDeploy 
               ActionTypeId: 
                 Category: Test 
@@ -321,6 +335,18 @@ Resources:
                 Version: '1' 
               Configuration: 
                 ProjectName: !Ref CloudCustodianPolicyDeploymentProject 
+              InputArtifacts: 
+                - Name: source 
+              OutputArtifacts: [] 
+              RunOrder: 3 
+            - Name: c7n-org_Deploy 
+              ActionTypeId: 
+                Category: Test 
+                Owner: AWS 
+                Provider: CodeBuild 
+                Version: '1' 
+              Configuration: 
+                ProjectName: !Ref CloudCustodianPolicyDeploymentOrgProject 
               InputArtifacts: 
                 - Name: source 
               OutputArtifacts: [] 
@@ -448,12 +474,20 @@ Resources:
               - 'logs:CreateLogGroup' 
               - 'logs:CreateLogStream' 
               - 'logs:PutLogEvents' 
+              - 'logs:DescribeLogGroups'
             Effect: Allow 
             Resource: 
               - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/${CloudCustodianPolicyDeploymentDryRunProject}' 
               - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/${CloudCustodianPolicyDeploymentDryRunProject}:*' 
               - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/${CloudCustodianPolicyDeploymentProject}' 
-              - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/${CloudCustodianPolicyDeploymentProject}:*' 
+              - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/${CloudCustodianPolicyDeploymentProject}:*'
+              - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/${CloudCustodianPolicyDeploymentOrgProject}' 
+              - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/${CloudCustodianPolicyDeploymentOrgProject}:*'
+              - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/cloud-custodian/policies'
+              - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/cloud-custodian/policies:*'
+              - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:*:log-stream'
+              - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:*:log-stream:*'
+
           - Action: 's3:GetObject' 
             Effect: Allow 
             Resource: !Sub '${ArtifactsBucket.Arn}/*' 
@@ -586,10 +620,12 @@ Resources:
               commands: 
                 - pip install c7n==${CloudCustodianVersion} 
                 - pip install c7n-mailer==${MailerVersion} 
+                - pip install c7n-org==${CloudCustodianORGVersion}
             build: 
               commands: 
                 - c7n-mailer --config c7n_mailer_config/mailer.yml --templates c7n_mailer_config/templates/ --update-lambda 
                 - custodian run --dryrun --assume arn:aws:iam::${AWS::AccountId}:role/CloudCustodianAdminRole --output-dir output/logs policies/* -m aws -l /cloud-custodian/policies
+                - c7n-org run --dryrun -c c7n-org-policies/accounts.yml -s output -u c7n-org-policies/organization-policies.yml --region us-east-1 --region ca-central-1 --verbose
           artifacts: 
             base-directory: output 
             files: '**/*' 
@@ -618,6 +654,35 @@ Resources:
               commands: 
                 - c7n-mailer --config c7n_mailer_config/mailer.yml --templates c7n_mailer_config/templates/ --update-lambda 
                 - custodian run --assume arn:aws:iam::${AWS::AccountId}:role/CloudCustodianAdminRole --output-dir output/logs policies/* -m aws -l /cloud-custodian/policies
+          artifacts: 
+            base-directory: output 
+            files: '**/*' 
+        Type: NO_SOURCE 
+  CloudCustodianPolicyDeploymentOrgProject: 
+    Type: 'AWS::CodeBuild::Project' 
+    Properties: 
+      Artifacts: 
+        Type: NO_ARTIFACTS 
+      Environment: 
+        ComputeType: BUILD_GENERAL1_SMALL 
+        Image: 'aws/codebuild/python:2.7.12' 
+        PrivilegedMode: false 
+        Type: LINUX_CONTAINER 
+      Name: CloudCustodianOrgPolicyDeploymentProject 
+      ServiceRole: !Sub '${CloudCustodianPolicyDeploymentProjectRole.Arn}' 
+      Source: 
+        BuildSpec: !Sub | 
+          version: '0.2' 
+          phases: 
+            install: 
+              commands: 
+                - pip install c7n==${CloudCustodianVersion} 
+                - pip install c7n-mailer==${MailerVersion} 
+                - pip install c7n-org==${CloudCustodianORGVersion} 
+            build: 
+              commands:   
+                - c7n-org run -c c7n-org-policies/accounts.yml -s output -u c7n-org-policies/* --region us-east-1 --region ca-central-1 --verbose
+                - c7n-org report -c c7n-org-policies/accounts.yml -s output -u c7n-org-policies/organization-policies.yml --region us-east-1 --region ca-central-1
           artifacts: 
             base-directory: output 
             files: '**/*' 
