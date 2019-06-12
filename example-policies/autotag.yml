@@ -2,7 +2,7 @@ vars:
 
   notification_actionEmail: &notify_actionEmail
   - type: notify
-    template: geraldo_default
+    template: better_default
     to:
       - resource-owner
       - email@example.com
@@ -12,7 +12,7 @@ vars:
 
   notification_actionSlack: &notify_actionSlack
   - type: notify
-    slack_template: geraldo_slack
+    slack_template: better_slack
     to:
       - https://hooks.slack.com/services/AAA/BBB/CCC
     transport:

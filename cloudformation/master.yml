@@ -694,7 +694,7 @@ Resources:
                 - if [ -f "c7n-org-policies/organization-policies.yml" ]; then pip install c7n-org==${CloudCustodianORGVersion}; fi
             build: 
               commands:   
-                - if [ -f "c7n-org-policies/organization-policies.yml" ]; then c7n-org run -c c7n-org-policies/accounts.yml -s output -u c7n-org-policies/* --region us-east-1 --region ca-central-1 --verbose; fi
+                - if [ -f "c7n-org-policies/organization-policies.yml" ]; then c7n-org run -c c7n-org-policies/accounts.yml -s output -u c7n-org-policies/organization-policies.yml --region us-east-1 --region ca-central-1 --verbose; fi
                 - if [ -f "c7n-org-policies/organization-policies.yml" ]; then c7n-org report -c c7n-org-policies/accounts.yml -s output -u c7n-org-policies/organization-policies.yml --region us-east-1 --region ca-central-1; fi
                 - if [ ! -f "c7n-org-policies/organization-policies.yml" ]; then echo "The organization-policies.yml does not exist, recommended removing this action from the pipeline."; fi 
           artifacts: 
