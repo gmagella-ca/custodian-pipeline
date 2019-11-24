@@ -10,6 +10,131 @@ This is desirable for many reasons, some of witch is:
 DISCLAIMER:
 Use this solution at your own risk. This file is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. 
 
+## Setting up the Multi-Account structure for Custodian.   
+ 
+Custodian can be used either in a single account or in a multi-account configuration.  In this set up we are going to have a central **'Master/Security'** account and a number of **'Member'** accounts which will be managed by the Custodian policies.  These will be referred to a Member and Master respectively from this point forward. 
+ 
+The Architecture Diagram is below: 
+ 
+![alt architecture-diagram][architecture] 
+ 
+[architecture]: img/custodian.png 
+ 
+### Note that at this moment, the Guard-duty piece is *not* in place. (Work In-Progress)
+
+The Master account will be used to host: 
+- AWS CodeCommit Repository (a git repository) 
+- AWS CodeBuild 
+- AWS CodePipeline  
+- CloudWatch Event Rules built by Custodian 
+- Lambda Functions built by Custodian 
+- SNS Topic for outputing Code Pipeline events to email or a webhook 
+- SQS, SNS and SES services for sending Custodian notfications 
+ 
+Setting up the Master account requires the Cloud Watch Event bus to be confirgured to receive events from other accounts.  This is done via the CloudFormation template [master.yml](cloudformation/master.yml)  (EventBusPolicy resource). 
+ 
+The Member account will forward CloudWatch Events to the Master Account for monitoring.  It will also have a Trust Relationship with the Master Account which will allow the Master Role to assume the role CloudCustodianAdminRole, which has an AWS Managed Administrator Policy attached to it. IMPORTANT: In a production environment, you'd like to limit this role to the functions you've already vetted in your policies.  
+ 
+When an action is performed in the Member account. e.g. a resource is created, this event is forwarded to the Master event bus and matched against CloudWatch Event Rules created by Custodian Policies.  If it is matched the Rule will trigger a Lambda function.  This will STS Assume Role in the Member account using the CloudCustodianAdmin role to make the defined change to the resource.  
+ 
+There are a few things worth noting:
+
+1. This is a single-region deployment that can be extended to work multi-region with easy (instructions below).
+2. This automation approach its only suitable for cloudtrail based policies initially (please see considerations below if you would like to use other types of policies, e.g: periodic / config / etc)
+
+### What you'll need before start:
+1. Clone this repo into your machine.
+2. Identify the Master Account ID. This should be your "Security" account, not your AWS Master Org Account.
+3. Identify the Member Accounts you'll want to monitor with Cloudcustodian (Account IDs)
+4. Make sure you have admin access to all accounts in question.
+
+# Member Account 
+ 
+This is the account(s) that will be monitored by Custodian. This account needs to send Cloudwatch Events to the Master (Security) Account. We have to also create a Role and policies with the appropriate permissions for the Master/Security Account to STS/AssumeRole and carry the actions out. Here is how you deploy the resources in the Member Account:
+ 
+#### Deploy the CloudFormation Script via the console 
+ 
+1.  Login to the console (or assume a role via STS) of the Member (monitored) account.  Go to CloudFormation 
+2.  Create Stack 
+3.  Upload a template to Amazon S3 
+4.  Choose file [member.yml](cloudformation/member.yml) 
+5.  Provide a StackName 
+6.  Provide the account number of the Master (Security) account 
+7.  Next 
+8.  Next 
+9.  Tick "I acknowlewdge that AWS CloudFormation might create IAM resources with custom names." 
+10. Create 
+11. Optional - deploy [rule.yml](cloudformation/rule.yml) in the other regions you want to monitor.
+ 
+NOTE: You can use Cloudformation StackSets to perform this action in all "Member" accounts for you.
+
+#### Deploy the CloudFormation Script via the CLI 
+ 
+Ensure you have the AWS CLI installed and configured.  You will need IAM Access Keys to use the AWS CLI 
+ 
+- [Installing the AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/cli-chap-install.html) 
+- [Configuring the AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/cli-chap-configure.html) 
+ 
+From the directory containing both the CloudFormation Template and Parameters file. Edit the Parameters File and provide the account Id of the Master Account:  
+ 
+```bash 
+vi parameters.json 
+ 
+[ 
+  { 
+    "ParameterKey": "CustodianMasterAccountId", 
+    "ParameterValue":"123412341234" 
+  }, 
+  { 
+    "ParameterKey": "CloudWatchEventRuleName", 
+    "ParameterValue": "EventForwardingToCentralAccount" 
+  } 
+] 
+``` 
+Deploy the stack using the AWS CLI.  Insert the profile name you are using to STS into the relevant account.  Note that this will create a stack with terminiation protection enabled to prevent accidental deletion. 
+ 
+```bash 
+aws cloudformation create-stack \ 
+--stack-name EventForwardtoMaster \ 
+--template-body file://member.yml \ 
+--parameters file://member-parameters.json \ 
+--capabilities CAPABILITY_NAMED_IAM \ 
+--profile custodian \ 
+--region us-east-1 \ 
+--enable-termination-protection 
+``` 
+ 
+# Master Account  
+ 
+## Deploy CloudFormation to build Repository and CodePipeline 
+ 
+In the Master account deploy the CloudFormation Template master.yml either via the console or via the command line.  Use the --profile for your security account. 
+ 
+```bash 
+aws cloudformation create-stack \ 
+--stack-name CloudCustodian \ 
+--template-body file://master.yml \ 
+--parameters file://master-parameters.json \ 
+--capabilities CAPABILITY_NAMED_IAM \ 
+--profile security \ 
+--region us-east-1 \ 
+--enable-termination-protection 
+``` 
+ 
+This will build: 
+- A Code Repository called CloudCustodianPolicies 
+- SNS Topic for Manual approvals
+- Required IAM Roles
+- An SQS Queue for the Mailer function
+- An S3 Bucket to host the artifacts
+ 
+- A Code Deployment Pipeline called CloudCustodianDeploymentPipeline with the following stages: 
+  - Retrive Policies 
+  - PolicyValidationStage 
+  - PolicyCleanUpStage 
+  - PolicyDeploymentStage 
+ 
+# Setting up the Security Engineer workspace:
 
 ## Setting-up your local environment with Cloud Custodian 
  
@@ -53,176 +178,7 @@ If it returns a result you have installed custodian on your local environment
 ``` 
  
 You now have a local development environment for writing your custodian policies.  Writing and testing policies will be covered later. 
- 
-## Setting up the Multi-Account structure for Custodian.   
- 
-Custodian can be used either in a single account or in a multi-account configuration.  In this set up we are going to have a central **'Master'** security account and a number of other **'Member'** accounts which will be managed by the Custodian policies.  These will be referred to a Member and Master respectively from this point forward. 
- 
-The Architecture Diagram is below: 
- 
-![alt architecture-diagram][architecture] 
- 
-[architecture]: img/custodian.png 
- 
-The Master account will be used to host: 
-- AWS CodeCommit Repository (a git repository) 
-- AWS CodeBuild 
-- AWS CodePipeline  
-- CloudWatch Event Rules built by Custodian 
-- Lambda Functions built by Custodian 
-- It may also include: 
-  - SNS Topic for outputing Code Pipeline events to email or a webhook 
-  - SQS, SNS and SES services for sending Custodian notfications 
- 
-Setting up the Master account requires the Cloud Watch Event bus to be confirgured to recieve events from other accounts.  This is done via the CloudFormation Script. 
- 
-The Member account will forward CloudWatch Events to the Master Account for monitoring.  It will also have a Trust Relationship with the Master Account which will allow the Master Role to assume the role CloudCustodianAdminRole, which has an AWS Managed Administrator Policy attached to it.  
- 
-When an action is performed in the Member account. e.g. a resource is created, this event is forwarded to the Master event bus and matched against CloudWatch Event Rules created by Custodian Policies.  If it is matched the Rule will trigger a Lambda function.  This will STS Assume Role in the Member account using the CloudCustodianAdmin role to make the defined change to the resource.  
- 
-There are a few things worth noting:
 
-1. This is a single-region deployment that can be extended to work multi-region with easy (instructions below).
-2. This automation approach its only suitable for cloudtrail based policies initially (please see considerations below if you would like to use other types of policies, e.g: periodic / config / etc)
-
-## Instructions on how to make this pipeline multi-region:
-
-If your AWS Footprint is spanned across multiple regions, these are the changes you'll have to perform to expand this set-up to support it:
-
-Change the buildspec for CloudCustodianPolicyDeploymentProject from:
-```
-custodian run --assume arn:aws:iam::${AWS::AccountId}:role/CloudCustodianAdminRole --output-dir output/logs policies/* 
-```
-to (add as many regions as you'd like with multiple --region):
-```
-custodian run --assume arn:aws:iam::${AWS::AccountId}:role/CloudCustodianAdminRole --output-dir output/logs policies/* --region <region1> --region <region2>
-```
-
-This will make the deployment phase create the lambda functions in all the regions you need, but we need to forward events to the master account on that region so the cloudwatch event can get triggered. A cloudformation template is provided.
-
-### create the rule on the child accounts on the regions you want to support:
-
-Use the template rule.yaml to deploy the rules in any aditional region. Use the details exported on the by the MEMBER stack (step 11 on the instructions below)
-
-## Instructions to use other kinds of policies (a.k.a: Using c7n-org):
-
-For increased security, we want all the lambdas be built the Master account and reacting to cloudtrail events flowing through the event bus. 
-
-This architecture decision can limit our ability to perform certain tasks / policy checks (e.g: periodic checks). Or order for this kind of policies to work we need to deploy them on all accounts. 
-Enters [c7n-org](https://www.cloudcustodian.io/docs/tools/c7n-org.html)!
-
-The pipeline have an action called c7n-org_Deploy, this action will run "c7n-org run" command to deploy the policy *c7n-org-policies/organization-policies.yml* using the file *c7n-org-policies/accounts.yml*. 
-
-Note: To create the accounts.yml file, you might want to use the config file generation steps [described in the documentation](https://www.cloudcustodian.io/docs/tools/c7n-org.html#config-file-generation). 
-
-Here is an example of one account on this file.
-
-```
-- account_id: '123456789123'
-  email: email@example.com
-  name: Account-Name
-  role: arn:aws:iam::123456789123:role/CloudCustodianAdminRole
-  tags:
-  - path:/
-```
-
-IMPORTANT: In order for the action c7n-org_Deploy to be able to assume the CloudCustodianAdminRole on the member accounts, you'll have to change the policy CloudCustodianPolicyDeploymentProjectRolePolicy and add the permission to assume role on all member accounts, similar to this:
-
-```
-{
-    "Action": "sts:AssumeRole",
-    "Resource": [
-        "arn:aws:iam::<master-accound-id>:role/CloudCustodianAdminRole",
-        "arn:aws:iam::<member-account1>:role/CloudCustodianAdminRole",
-        "arn:aws:iam::<member-account1>:role/CloudCustodianAdminRole"
-    ],
-    "Effect": "Allow"
-},
-```
-
-Note: If this file is not present, the dry-run command will skip, but the action "c7n-org" will still provision and run skipping steps, if you do not intend to use this, you might want to remove the action so you won't be paying for resources you're using with no purpose. 
-
-### Member (The account to be monitored) Account 
- 
-Custodian Requires the accounts it is monitoring to send Cloudwatch Events to the Master (Security) Account.  It also must provide a Role with a policy with Administrator permissions for the Security Account to STS into and carry out actions. This process is described below. 
- 
-#### Deploy the CloudFormation Script via the console 
- 
-1.  Login to the console (or assume a role via STS) of the Member (monitored) account.  Go to CloudFormation 
-2.  Create Stack 
-3.  Upload a template to Amazon S3 
-4.  Choose file [member.yml](cloudformation/member.yml) 
-5.  Provide a StackName 
-6.  Provide the account number of the Master (Security) account 
-7.  Next 
-8.  Next 
-9.  Tick "I acknowlewdge that AWS CloudFormation might create IAM resources with custom names." 
-10. Create 
-11. Optional - deploy [rule.yml](cloudformation/rule.yml) in the other regions you want to monitor.
- 
-#### Deploy the CloudFormation Script via the CLI 
- 
-Ensure you have the AWS CLI installed and configured.  You will need IAM Access Keys to use the AWS CLI 
- 
-- [Installing the AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/cli-chap-install.html) 
-- [Configuring the AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/cli-chap-configure.html) 
- 
-From the directory containing both the CloudFormation Template and Parameters file. Edit the Parameters File and provide the account Id of the Master Account:  
- 
-```bash 
-vi parameters.json 
- 
-[ 
-  { 
-    "ParameterKey": "CustodianMasterAccountId", 
-    "ParameterValue":"123412341234" 
-  }, 
-  { 
-    "ParameterKey": "CloudWatchEventRuleName", 
-    "ParameterValue": "EventForwardingToCentralAccount" 
-  } 
-] 
-``` 
-Deploy the stack using the AWS CLI.  Insert the profile name you are using to STS into the relevant account.  Note that this will create a stack with terminiation protection enabled to prevent accidental deletion. 
- 
-```bash 
-aws cloudformation create-stack \ 
---stack-name EventForwardtoMaster \ 
---template-body file://member.yml \ 
---parameters file://member-parameters.json \ 
---capabilities CAPABILITY_NAMED_IAM \ 
---profile custodian \ 
---region us-east-1 \ 
---enable-termination-protection 
-``` 
- 
-### Master Account  
- 
-## Deploy CloudFormation to build Repository and CodePipeline 
- 
-In the Master account deploy the CloudFormation Template master.yml either via the console or via the command line.  Use the --profile for your security account. 
- 
-```bash 
-aws cloudformation create-stack \ 
---stack-name CloudCustodian \ 
---template-body file://master.yml \ 
---parameters file://master-parameters.json \ 
---capabilities CAPABILITY_NAMED_IAM \ 
---profile security \ 
---region us-east-1 \ 
---enable-termination-protection 
-``` 
- 
-This will build: 
-- A Code Repository called CloudCustodianPolicies 
- 
- 
-- A Code Deployment Pipeline called CloudCustodianDeploymentPipeline with the following stages: 
-  - Retrive Policies 
-  - PolicyValidationStage 
-  - PolicyCleanUpStage 
-  - PolicyDeploymentStage 
- 
 ## Create Git Credentials to Commit to the Repository 
  
 To allow users to commit to the Repository they need ssh keys to be able to commit 
@@ -293,7 +249,6 @@ git push -u origin master
  
 ### Conditional policy for the Master Branch 
  
- 
 A policy should be applied to prevent any user with access to the git repository from Merging into the Master Branch, which will initate a build of the pipeline.  Development of the Custodian Policies should be carried out on a branch and then reviewed before being merged into the main branch.  The blog post [Using AWS CodeCommit Pull Requests to request code reviews and discuss code](https://aws.amazon.com/blogs/devops/using-aws-codecommit-pull-requests-to-request-code-reviews-and-discuss-code/) provides a good overview of how to implement this process. 
  
 Details on how to restrict users from merging commits into the Master branch can be found in the documentation at: [Limit Pushes and Merges to Branches in AWS CodeCommit](https://docs.aws.amazon.com/codecommit/latest/userguide/how-to-conditional-branch.html) 
@@ -330,7 +285,7 @@ Example IAM policy to be applied to a user to prevent them merging commits into 
  
 # Writing and Deploying CloudCustodian Policies to the Deployment Pipeline 
  
-CloudCustodian Scripts are written in YAML. The [Cloud Custodian Documentation](https://www.capitalone.io/docs/index.html) provides an introduction and example use cases. 
+CloudCustodian policies are written in YAML. The [Cloud Custodian Documentation](https://www.capitalone.io/docs/index.html) provides an introduction and example use cases. 
  
 This guide supplements this with how to deploy the policies into the AWS CodeCommit repository and how to deploy them into the Master Account. 
  
@@ -491,6 +446,62 @@ To test the policy
 ## Pro Tips:
 
 1. Implement a tag "contact_tags" on your resources, so c7n-mailer can email the owner of the resources. TODO: Write a how-to configure a policy to do that.
+
+# Multi-Region Set-up
+
+If your AWS Footprint is spanned across multiple regions, these are the changes you'll have to perform to expand this set-up to support it:
+
+## Instructions on how to make this pipeline multi-region:
+
+Change the buildspec for CloudCustodianPolicyDeploymentProject from:
+```
+custodian run --assume arn:aws:iam::${AWS::AccountId}:role/CloudCustodianAdminRole --output-dir output/logs policies/* 
+```
+to (add as many regions as you'd like with multiple --region):
+```
+custodian run --assume arn:aws:iam::${AWS::AccountId}:role/CloudCustodianAdminRole --output-dir output/logs policies/* --region <region1> --region <region2>
+```
+
+This will make the deployment phase create the lambda functions in all the regions you need, but we need to forward events to the master account on that region so the cloudwatch event can get triggered. A cloudformation template is provided (rule.yaml).
+
+### create the rule on the child accounts on the regions you want to support:
+
+Use the template rule.yaml to deploy the rules in any aditional region. Use the details exported on the by the MEMBER stack (step 11 on the instructions below)
+
+# Using other kinds of policies like periodic (a.k.a: Using c7n-org):
+
+For increased security, we want all the lambdas be built the Master account and reacting to cloudtrail events flowing through the event bus but this architecture decision can limit our ability to perform certain tasks / policy checks (e.g: periodic checks). In order for this kind of policies to work we need to deploy them on all accounts. Enters [c7n-org](https://www.cloudcustodian.io/docs/tools/c7n-org.html)!
+
+The pipeline have an action called c7n-org_Deploy, this action will run "c7n-org run" command to deploy the policy *c7n-org-policies/organization-policies.yml* using the file *c7n-org-policies/accounts.yml*. 
+
+Note: To create the accounts.yml file, you might want to use the config file generation steps [described in the documentation](https://www.cloudcustodian.io/docs/tools/c7n-org.html#config-file-generation). 
+
+Here is an example of one account on this file.
+
+```
+- account_id: '123456789123'
+  email: email@example.com
+  name: Account-Name
+  role: arn:aws:iam::123456789123:role/CloudCustodianAdminRole
+  tags:
+  - path:/
+```
+
+IMPORTANT: In order for the action c7n-org_Deploy to be able to assume the CloudCustodianAdminRole on the member accounts, you'll have to change the policy CloudCustodianPolicyDeploymentProjectRolePolicy and add the permission to assume role on all member accounts, similar to this:
+
+```
+{
+    "Action": "sts:AssumeRole",
+    "Resource": [
+        "arn:aws:iam::<master-accound-id>:role/CloudCustodianAdminRole",
+        "arn:aws:iam::<member-account1>:role/CloudCustodianAdminRole",
+        "arn:aws:iam::<member-account2>:role/CloudCustodianAdminRole"
+    ],
+    "Effect": "Allow"
+},
+```
+
+Note: If this file is not present, the dry-run command will skip, but the action "c7n-org" will still provision and run skipping steps, if you do not intend to use this, you might want to remove the action so you won't be paying for resources you're using with no purpose. 
 
 ## TO-DO:
 
