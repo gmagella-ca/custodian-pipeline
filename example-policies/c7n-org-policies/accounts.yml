@@ -1,0 +1,21 @@
+accounts:
+- account_id: '111111111111'
+  email: email@example.com
+  name: AccountName1
+  role: arn:aws:iam::111111111111:role/CloudCustodianAdminRole
+  tags:
+  - path:/
+- account_id: '222222222222'
+  email: email@example.com
+  name: AccountName2
+  role: arn:aws:iam::222222222222:role/CloudCustodianAdminRole
+  tags:
+  - path:/
+- account_id: '333333333333'
+  email: email@example.com
+  name: AccountName3
+  role: arn:aws:iam::333333333333:role/CloudCustodianAdminRole
+  tags:
+  - path:/
+
+# c7n-org run -c accounts.yml -s output -u rds-unused.yml --region us-east-1 --region ca-central-1 --verbose
