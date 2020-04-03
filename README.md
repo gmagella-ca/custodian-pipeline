@@ -10,6 +10,16 @@ This is desirable for many reasons, some of witch is:
 DISCLAIMER:
 Use this solution at your own risk. This file is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. 
 
+## TL;DR:
+ 
+1. Deploy Master CF template in an account you'll be calling "CloudCustodianMaster"
+2. Deploy Member CF in all accounts you'll call "Member" (will report to master for CloudCustodianPurposes)
+3. Create the git repo with the files expected (intructions [here](#FileInstructions))
+4. Update mailer settings (get SQS Queue URL and RoleName from CloudFormation)
+5. Write your first policy (here are some [examples](https://cloudcustodian.io/docs/aws/examples/index.html) )
+6. Push your changes to git and watch the pipeline go. #Success!
+7. PLEASE limit your CloudCustodianAdminRole permission, this example repo creates with Admin privileges.
+
 ## Setting up the Multi-Account structure for Custodian.   
  
 Custodian can be used either in a single account or in a multi-account configuration.  In this set up we are going to have a central **'Master/Security'** account and a number of **'Member'** accounts which will be managed by the Custodian policies.  These will be referred to a Member and Master respectively from this point forward. 
@@ -137,7 +147,6 @@ This will build:
 # Setting up the Security Engineer workspace:
 
 ## Setting-up your local environment with Cloud Custodian 
- 
 To prevent packaging conflicts on your local environment it is recommended that you uses a virtual environment.  
  
 check you have pip installed  
@@ -199,7 +208,8 @@ This will be used by the CodePipeline. This directory will connect to the remote
  
 From the directory containing the policies directory 
  
- 
+# FileInstructions
+
 ``` 
 mkdir policies \ 
 mkdir c7n_mailer_config \ 
