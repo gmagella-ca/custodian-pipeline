@@ -16,20 +16,20 @@ Description: Template which creates a CodeCommit repository and CodePipeline pip
 Parameters: 
   CloudCustodianVersion: 
     Type: String 
-    Default: '0.8.41.0' 
+    Default: '0.8.46.1' 
   CloudCustodianORGVersion:
     Description: Provide the version of c7nOrg to use with your pipeline.
     Type: String 
-    Default: '0.5.1' 
+    Default: '0.5.7' 
   MailerVersion: 
     Type: String 
-    Default: '0.4.2'  
+    Default: '0.5.8'  
   OrganizationID: 
     Type: String 
-  SQSQueueName: 
-      Type: String 
-      Default: CustodianSQSMailer 
-      Description: Provide a name for the Custodian SQS Queue 
+  SQSCustodianQueueName: 
+    Type: String 
+    Default: CustodianSQSMailer 
+    Description: Provide a name for the Custodian SQS Queue
   SNSTopicApprovalsDisplayName: 
     Type: String 
     Default: CustodianSNSApprovals 
@@ -64,7 +64,33 @@ Resources:
   SQSMailer: 
       Type: AWS::SQS::Queue 
       Properties: 
-        QueueName: !Ref SQSQueueName 
+        QueueName: !Ref SQSCustodianQueueName 
+  SQSQueuePolicy:
+    Type: AWS::SQS::QueuePolicy
+    Properties:
+      PolicyDocument: !Sub |
+          {
+            "Version": "2012-10-17",
+            "Id": "AllowSendMessage",
+            "Statement": [
+              {
+                "Sid": "SID_AllowSendMessage",
+                "Effect": "Allow",
+                "Principal": {
+                  "AWS": "*"
+                },
+                "Action": "SQS:SendMessage",
+                "Resource": "${SQSMailer.Arn}",
+                "Condition": {
+                  "StringEquals": {
+                    "aws:PrincipalOrgID": "${OrganizationID}"
+                  }
+                }
+              }
+            ]
+          }
+      Queues:
+        - !Ref SQSCustodianQueueName
   SNSApprovalsTopic: 
     Type: AWS::SNS::Topic 
     Properties: 
