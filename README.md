@@ -201,36 +201,52 @@ The process is outlined in documentation at [Using IAM with CodeCommit: Git Cred
  
 In the directory on your local machine where you will store your custodians scripts. Create two directories: 
  
-- policies 
-- c7n_mailer_config 
+1. policies 
+2. c7n_mailer_config 
+3. c7-org-policies
  
-This will be used by the CodePipeline. This directory will connect to the remote CodeCommit directory via git. 
- 
-From the directory containing the policies directory 
+Theses folders host: 1: The Cloudtrail-based policies you'd like to apply, 2: Configurations for the mailer function and templates and 3: the policies that needs to be deployed as c7n-org, i.e: the policies using mode "periodic".
  
 # FileInstructions
 
+Either you can create the expected directory structure like this:
 ``` 
-mkdir policies \ 
-mkdir c7n_mailer_config \ 
-mkdir old_policies \ 
-git init \ 
+cd <folder-you-want-to-host-this-repo>
+mkdir policies 
+mkdir c7n_mailer_config
+mkdir old_policies
+git init
 git add . \ 
 git commit -m "commit message" 
 ``` 
  
+Another option (better) is copying the file structure included in this repo : example-policies/
+Linux/MAC:
+```
+cp -r example-policies/ /path/you/want
+```
+Windows:
+```
+xcopy c:\custodian-pipeline\example-policies c:\path\you\want
+```
+
+# It's recommended the you edit the policies / config files pointing to the correct SQS queue, Slack webBook, emails addresses, etc prior to commit this code into the repo.
+
 Next we connect the local directory to the remote git repository.  For this you need IAM permissions to connect to the remote git repository in AWS CodeCommit.   
  
 ## CodeCommit 
- 
+
+## INFO: you can use any GIT tool, in this case, you'd remove the created git repo and edit the pipeline and change the "Source" stage.
+
 Details on how to connect to a AWS CodeCommit repository can be found in: 
  
 [Connect to an AWS CodeCommit Repository](https://docs.aws.amazon.com/codecommit/latest/userguide/how-to-connect.html) 
  
-There are two options: 
+There are three options: 
  
 - https 
 - ssh 
+- git-remote-codecommit (highly recommended) [instructions](https://docs.aws.amazon.com/codecommit/latest/userguide/setting-up-git-remote-codecommit.html)
  
 You will need the url of the CodeCommit repository which was created by the CloudFormation stack built in the Security Account. 
  

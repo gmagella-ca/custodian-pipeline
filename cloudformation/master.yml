@@ -422,6 +422,7 @@ Resources:
             - 'lambda:GetFunction' 
             - 'lambda:CreateFunction' 
             - 'lambda:UpdateFunctionCode' 
+            - 'lambda:UpdateFunctionConfiguration' 
             - 'lambda:AddPermission' 
             Effect: Allow 
             Resource: 
